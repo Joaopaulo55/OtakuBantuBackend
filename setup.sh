@@ -23,8 +23,8 @@ echo -n "✔ NPM: "; npm -v
 
 # Instala dependências do Node
 echo "📦 Instalando dependências do Node.js..."
-echo "🔹 Dependências principais (express, node-fetch, cors)"
-npm install express@4.18.2 node-fetch@2.6.7 cors@2.8.5 --save || { 
+echo "🔹 Dependências principais (express, node-fetch, cors, cheerio, node-cache, express-rate-limit)"
+npm install express@4.18.2 node-fetch@2.6.7 cors@2.8.5 cheerio@1.0.0-rc.12 node-cache@5.1.2 express-rate-limit@6.8.1 --save || { 
     echo "❌ Falha ao instalar dependências principais"; 
     exit 1; 
 }
@@ -48,6 +48,9 @@ check_dependency() {
 check_dependency "express"
 check_dependency "node-fetch"
 check_dependency "cors"
+check_dependency "cheerio"
+check_dependency "node-cache"
+check_dependency "express-rate-limit"
 
 # Configura ESLint
 echo "🔧 Configurando ESLint..."
