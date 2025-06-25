@@ -1,74 +1,235 @@
-// OtakuBantu Backend com API real (Consumet/GogoAnime)
+// OtakuBantu Backend com fallback, cache, rate limit e múltiplas origens (AnimeFire, Goyabu, AnimeVibe)
 const express = require('express');
 const fetch = require('node-fetch');
+const cheerio = require('cheerio');
 const cors = require('cors');
+const fs = require('fs');
+const rateLimit = require('express-rate-limit');
+const NodeCache = require('node-cache');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+const BASE_URL = 'https://api.consumet.org/anime/gogoanime';
+const cache = new NodeCache({ stdTTL: 300 }); // 5 minutos
+
 app.use(cors());
 app.use(express.json());
 
-const BASE_URL = 'https://api.consumet.org/anime/gogoanime';
+// Limite de requisições por IP
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 100,
+  message: 'Limite de requisições excedido. Tente novamente mais tarde.'
+});
+app.use(limiter);
 
-// Buscar animes
+// Fallback 1: Anime Fire
+async function fallbackFromAnimeFire(episodeId) {
+  try {
+    const url = `https://animefire.plus/episodio/${episodeId}`;
+    const html = await fetch(url).then(res => res.text());
+    const $ = cheerio.load(html);
+    const sources = [];
+
+    $('source').each((i, el) => {
+      sources.push({
+        quality: $(el).attr('label') || 'Desconhecida',
+        url: $(el).attr('src')
+      });
+    });
+
+    return { fallback: true, provider: 'animefire', sources };
+  } catch (e) {
+    console.error('Erro no fallback Anime Fire:', e.message);
+    return { fallback: true, provider: 'animefire', sources: [] };
+  }
+}
+
+// Fallback 2: Goyabu
+async function fallbackFromGoyabu(episodeId) {
+  try {
+    const url = `https://goyabu.to/episodio/${episodeId}`;
+    const html = await fetch(url).then(res => res.text());
+    const $ = cheerio.load(html);
+    const sources = [];
+
+    $('video source').each((i, el) => {
+      sources.push({
+        quality: $(el).attr('label') || 'Desconhecida',
+        url: $(el).attr('src')
+      });
+    });
+
+    return { fallback: true, provider: 'goyabu', sources };
+  } catch (e) {
+    return { fallback: true, provider: 'goyabu', sources: [] };
+  }
+}
+
+// Fallback 3: AnimeVibe
+async function fallbackFromAnimeVibe(episodeId) {
+  try {
+    const url = `https://animevibe.dev/watch/${episodeId}`;
+    const html = await fetch(url).then(res => res.text());
+    const $ = cheerio.load(html);
+    const sources = [];
+
+    $('video source').each((i, el) => {
+      sources.push({
+        quality: $(el).attr('res') || 'Desconhecida',
+        url: $(el).attr('src')
+      });
+    });
+
+    return { fallback: true, provider: 'animevibe', sources };
+  } catch (e) {
+    return { fallback: true, provider: 'animevibe', sources: [] };
+  }
+}
+
+// Log simples de erros
+function logError(message) {
+  const log = `[${new Date().toISOString()}] ${message}\n`;
+  fs.appendFileSync('logs.txt', log);
+}
+
+// Buscar animes (suporte à paginação)
 app.get('/search', async (req, res) => {
   const query = req.query.q;
+  const page = req.query.page || 1;
   if (!query) return res.status(400).json({ error: 'Query ausente.' });
 
+  const cacheKey = `search-${query}-page-${page}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
+
   try {
-    const response = await fetch(`${BASE_URL}/${encodeURIComponent(query)}`);
+    const response = await fetch(`${BASE_URL}/${encodeURIComponent(query)}?page=${page}`);
     const data = await response.json();
+    cache.set(cacheKey, data);
     res.json(data);
   } catch (err) {
+    logError('Erro /search: ' + err.message);
     res.status(500).json({ error: 'Erro ao buscar animes.', details: err.message });
+  }
+});
+
+// Buscar por gênero (filtro simples via Consumet)
+app.get('/genre/:genre', async (req, res) => {
+  const genre = req.params.genre.toLowerCase();
+  const page = req.query.page || 1;
+  const cacheKey = `genre-${genre}-page-${page}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const response = await fetch(`${BASE_URL}?page=${page}`);
+    const data = await response.json();
+    const filtered = data.results.filter(anime => anime.genres?.map(g => g.toLowerCase()).includes(genre));
+    cache.set(cacheKey, { results: filtered });
+    res.json({ results: filtered });
+  } catch (err) {
+    logError('Erro /genre/:genre: ' + err.message);
+    res.status(500).json({ error: 'Erro ao buscar por gênero.', details: err.message });
   }
 });
 
 // Detalhes do anime
 app.get('/anime/:id', async (req, res) => {
   const animeId = req.params.id;
+  const cacheKey = `anime-${animeId}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
 
   try {
     const response = await fetch(`${BASE_URL}/info/${animeId}`);
     const data = await response.json();
+    cache.set(cacheKey, data);
     res.json(data);
   } catch (err) {
+    logError('Erro /anime/:id: ' + err.message);
     res.status(500).json({ error: 'Erro ao buscar detalhes do anime.', details: err.message });
   }
 });
 
-// Episódio (video player)
+// Episódio (player + múltiplas origens)
 app.get('/watch/:id', async (req, res) => {
   const episodeId = req.params.id;
+  const cacheKey = `watch-${episodeId}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
 
   try {
     const response = await fetch(`${BASE_URL}/watch/${episodeId}`);
     const data = await response.json();
+
+    if (!data.sources || data.sources.length === 0) {
+      const fallback = await fallbackFromAnimeFire(episodeId);
+      if (fallback.sources.length === 0) {
+        const altFallback = await fallbackFromGoyabu(episodeId);
+        if (altFallback.sources.length === 0) {
+          const vibeFallback = await fallbackFromAnimeVibe(episodeId);
+          cache.set(cacheKey, vibeFallback);
+          return res.json(vibeFallback);
+        }
+        cache.set(cacheKey, altFallback);
+        return res.json(altFallback);
+      }
+      cache.set(cacheKey, fallback);
+      return res.json(fallback);
+    }
+
+    cache.set(cacheKey, data);
     res.json(data);
   } catch (err) {
-    res.status(500).json({ error: 'Erro ao buscar episódio.', details: err.message });
+    logError('Erro /watch/:id: ' + err.message);
+    const fallback = await fallbackFromAnimeFire(episodeId);
+    if (fallback.sources.length === 0) {
+      const altFallback = await fallbackFromGoyabu(episodeId);
+      if (altFallback.sources.length === 0) {
+        const vibeFallback = await fallbackFromAnimeVibe(episodeId);
+        cache.set(cacheKey, vibeFallback);
+        return res.json(vibeFallback);
+      }
+      cache.set(cacheKey, altFallback);
+      return res.json(altFallback);
+    }
+    cache.set(cacheKey, fallback);
+    res.json(fallback);
   }
 });
 
-// Rota para obter animes populares
+// Animes populares
 app.get('/popular', async (req, res) => {
+  const cacheKey = `popular`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
+
   try {
     const response = await fetch(`${BASE_URL}/popular`);
     const data = await response.json();
+    cache.set(cacheKey, data);
     res.json(data);
   } catch (err) {
+    logError('Erro /popular: ' + err.message);
     res.status(500).json({ error: 'Erro ao buscar animes populares.', details: err.message });
   }
 });
 
-// Rota para obter episódios recentes
+// Episódios recentes
 app.get('/recent', async (req, res) => {
+  const cacheKey = `recent`;
+  const cached = cache.get(cacheKey);
+  if (cached) return res.json(cached);
+
   try {
     const response = await fetch(`${BASE_URL}/recent-episodes`);
     const data = await response.json();
+    cache.set(cacheKey, data);
     res.json(data);
   } catch (err) {
+    logError('Erro /recent: ' + err.message);
     res.status(500).json({ error: 'Erro ao buscar episódios recentes.', details: err.message });
   }
 });
