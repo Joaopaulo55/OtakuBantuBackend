@@ -1,4 +1,4 @@
-// OtakuBantu Backend com fallback, cache, rate limit e múltiplas origens (AnimeFire, Goyabu, AnimeVibe)
+// OtakuBantu Backend com fallback, cache, rate limit e múltiplas origens
 const express = require('express');
 const fetch = require('node-fetch');
 const cheerio = require('cheerio');
@@ -10,7 +10,8 @@ const NodeCache = require('node-cache');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const BASE_URL = 'https://api.consumet.org/anime/gogoanime';
+const PRIMARY_BASE = 'https://api.consumet.org/anime/gogoanime';
+const MIRROR_BASE = 'https://consumet-api-fawn.vercel.app/anime/gogoanime';
 const cache = new NodeCache({ stdTTL: 300 }); // 5 minutos
 
 app.use(cors());
@@ -24,7 +25,21 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// Fallback 1: Anime Fire
+// Função com fallback entre BASEs
+async function fetchWithFallback(urlPath) {
+  try {
+    const res = await fetch(`${PRIMARY_BASE}${urlPath}`);
+    if (!res.ok) throw new Error('Primário falhou');
+    return await res.json();
+  } catch (err) {
+    console.warn('⚠️ Primário falhou. Tentando o mirror...');
+    const res2 = await fetch(`${MIRROR_BASE}${urlPath}`);
+    if (!res2.ok) throw new Error('Mirror falhou também');
+    return await res2.json();
+  }
+}
+
+// Fallbacks para fontes alternativas
 async function fallbackFromAnimeFire(episodeId) {
   try {
     const url = `https://animefire.plus/episodio/${episodeId}`;
@@ -46,7 +61,6 @@ async function fallbackFromAnimeFire(episodeId) {
   }
 }
 
-// Fallback 2: Goyabu
 async function fallbackFromGoyabu(episodeId) {
   try {
     const url = `https://goyabu.to/episodio/${episodeId}`;
@@ -67,7 +81,6 @@ async function fallbackFromGoyabu(episodeId) {
   }
 }
 
-// Fallback 3: AnimeVibe
 async function fallbackFromAnimeVibe(episodeId) {
   try {
     const url = `https://animevibe.dev/watch/${episodeId}`;
@@ -88,13 +101,11 @@ async function fallbackFromAnimeVibe(episodeId) {
   }
 }
 
-// Log simples de erros
 function logError(message) {
   const log = `[${new Date().toISOString()}] ${message}\n`;
   fs.appendFileSync('logs.txt', log);
 }
 
-// Buscar animes (suporte à paginação)
 app.get('/search', async (req, res) => {
   const query = req.query.q;
   const page = req.query.page || 1;
@@ -105,8 +116,7 @@ app.get('/search', async (req, res) => {
   if (cached) return res.json(cached);
 
   try {
-    const response = await fetch(`${BASE_URL}/${encodeURIComponent(query)}?page=${page}`);
-    const data = await response.json();
+    const data = await fetchWithFallback(`/${encodeURIComponent(query)}?page=${page}`);
     cache.set(cacheKey, data);
     res.json(data);
   } catch (err) {
@@ -115,7 +125,6 @@ app.get('/search', async (req, res) => {
   }
 });
 
-// Buscar por gênero (filtro simples via Consumet)
 app.get('/genre/:genre', async (req, res) => {
   const genre = req.params.genre.toLowerCase();
   const page = req.query.page || 1;
@@ -124,8 +133,7 @@ app.get('/genre/:genre', async (req, res) => {
   if (cached) return res.json(cached);
 
   try {
-    const response = await fetch(`${BASE_URL}?page=${page}`);
-    const data = await response.json();
+    const data = await fetchWithFallback(`?page=${page}`);
     const filtered = data.results.filter(anime => anime.genres?.map(g => g.toLowerCase()).includes(genre));
     cache.set(cacheKey, { results: filtered });
     res.json({ results: filtered });
@@ -135,7 +143,6 @@ app.get('/genre/:genre', async (req, res) => {
   }
 });
 
-// Detalhes do anime
 app.get('/anime/:id', async (req, res) => {
   const animeId = req.params.id;
   const cacheKey = `anime-${animeId}`;
@@ -143,8 +150,7 @@ app.get('/anime/:id', async (req, res) => {
   if (cached) return res.json(cached);
 
   try {
-    const response = await fetch(`${BASE_URL}/info/${animeId}`);
-    const data = await response.json();
+    const data = await fetchWithFallback(`/info/${animeId}`);
     cache.set(cacheKey, data);
     res.json(data);
   } catch (err) {
@@ -153,7 +159,6 @@ app.get('/anime/:id', async (req, res) => {
   }
 });
 
-// Episódio (player + múltiplas origens)
 app.get('/watch/:id', async (req, res) => {
   const episodeId = req.params.id;
   const cacheKey = `watch-${episodeId}`;
@@ -161,8 +166,7 @@ app.get('/watch/:id', async (req, res) => {
   if (cached) return res.json(cached);
 
   try {
-    const response = await fetch(`${BASE_URL}/watch/${episodeId}`);
-    const data = await response.json();
+    const data = await fetchWithFallback(`/watch/${episodeId}`);
 
     if (!data.sources || data.sources.length === 0) {
       const fallback = await fallbackFromAnimeFire(episodeId);
@@ -200,15 +204,13 @@ app.get('/watch/:id', async (req, res) => {
   }
 });
 
-// Animes populares
 app.get('/popular', async (req, res) => {
   const cacheKey = `popular`;
   const cached = cache.get(cacheKey);
   if (cached) return res.json(cached);
 
   try {
-    const response = await fetch(`${BASE_URL}/popular`);
-    const data = await response.json();
+    const data = await fetchWithFallback(`/popular`);
     cache.set(cacheKey, data);
     res.json(data);
   } catch (err) {
@@ -217,15 +219,13 @@ app.get('/popular', async (req, res) => {
   }
 });
 
-// Episódios recentes
 app.get('/recent', async (req, res) => {
   const cacheKey = `recent`;
   const cached = cache.get(cacheKey);
   if (cached) return res.json(cached);
 
   try {
-    const response = await fetch(`${BASE_URL}/recent-episodes`);
-    const data = await response.json();
+    const data = await fetchWithFallback(`/recent-episodes`);
     cache.set(cacheKey, data);
     res.json(data);
   } catch (err) {
@@ -234,7 +234,6 @@ app.get('/recent', async (req, res) => {
   }
 });
 
-// Início do servidor
 app.listen(PORT, () => {
   console.log(`OtakuBantu API rodando na porta ${PORT}`);
 });
