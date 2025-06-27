@@ -23,14 +23,14 @@ echo -n "✔ NPM: "; npm -v
 
 # Instala dependências do Node
 echo "📦 Instalando dependências do Node.js..."
-echo "🔹 Dependências principais (express, node-fetch, cors, cheerio, node-cache, express-rate-limit)"
-npm install express@4.18.2 node-fetch@2.6.7 cors@2.8.5 cheerio@1.0.0-rc.12 node-cache@5.1.2 express-rate-limit@6.8.1 --save || { 
+echo "🔹 Dependências principais (express, axios, node-fetch, cors, cheerio, node-cache, express-rate-limit)"
+npm install express@4.18.2 axios@1.6.2 node-fetch@2.6.7 cors@2.8.5 cheerio@1.0.0-rc.12 node-cache@5.1.2 express-rate-limit@6.8.1 --save || { 
     echo "❌ Falha ao instalar dependências principais"; 
     exit 1; 
 }
 
-echo "🔹 Dependências de desenvolvimento (nodemon, eslint, jest)"
-npm install nodemon@3.0.2 eslint@8.56.0 jest@29.7.0 --save-dev || {
+echo "🔹 Dependências de desenvolvimento (nodemon, eslint, jest, supertest)"
+npm install nodemon@3.0.2 eslint@8.56.0 jest@29.7.0 supertest@6.3.3 --save-dev || {
     echo "⚠️ Falha ao instalar dependências de desenvolvimento (continuando...)"
 }
 
@@ -46,6 +46,7 @@ check_dependency() {
 }
 
 check_dependency "express"
+check_dependency "axios"
 check_dependency "node-fetch"
 check_dependency "cors"
 check_dependency "cheerio"
@@ -81,10 +82,14 @@ if [ ! -f ".env" ]; then
 PORT=3000
 
 # Configurações da API Consumet
-CONSUMET_BASE_URL=https://api.consumet.org/anime/gogoanime
+CONSUMET_BASE_URL=https://consumet-api-ur6f.onrender.com
 
 # Configurações de cache (em segundos)
 CACHE_TTL=3600
+
+# Configurações de rate limiting
+RATE_LIMIT_WINDOW=15
+RATE_LIMIT_MAX=100
 EOL
     echo "✔ Arquivo .env criado com configurações básicas"
 else
@@ -94,7 +99,22 @@ fi
 # Cria diretório de logs se não existir
 mkdir -p logs
 
+# Configuração inicial do git (opcional)
+if [ ! -d ".git" ]; then
+    echo "🔄 Inicializando repositório Git..."
+    git init
+    echo "node_modules/" > .gitignore
+    echo "logs/" >> .gitignore
+    echo ".env" >> .gitignore
+    echo "✔ Repositório Git inicializado"
+fi
+
 echo "🚀 Setup concluído com sucesso!"
-echo "👉 Você pode iniciar o servidor com:"
-echo "   - npm run dev (para desenvolvimento com nodemon)"
-echo "   - npm start (para produção)"
+echo ""
+echo "👉 Comandos disponíveis:"
+echo "   - npm run dev   (para desenvolvimento com nodemon)"
+echo "   - npm start     (para produção)"
+echo "   - npm test      (para executar testes)"
+echo "   - npm run lint  (para verificar qualidade do código)"
+echo ""
+echo "⚠️ Lembre-se de configurar as variáveis de ambiente no arquivo .env"
