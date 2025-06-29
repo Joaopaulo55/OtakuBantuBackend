@@ -6,7 +6,7 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-const BASE_URL = 'https://animefire.net';
+const BASE_URL = 'https://animefire.plus';
 
 app.get('/', (req, res) => {
   res.send('🔥 API OtakuBantu AnimeFire Ativa');
@@ -15,20 +15,29 @@ app.get('/', (req, res) => {
 // 🟢 Lista de animes populares da página inicial
 app.get('/animefire/populares', async (req, res) => {
   try {
-    const { data } = await axios.get(BASE_URL);
+    const { data } = await axios.get(`${BASE_URL}/animes-atualizados`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0', // Evita bloqueio
+      }
+    });
+
     const $ = cheerio.load(data);
     const animes = [];
 
-    $('.swiper-slide .d-block').each((i, el) => {
-      const title = $(el).attr('title');
-      const url = BASE_URL + $(el).attr('href');
-      const thumb = $(el).find('img').attr('data-src') || $(el).find('img').attr('src');
-      animes.push({ title, url, thumb });
+    $('.anime-card-container').each((i, el) => {
+      const title = $(el).find('.anime-card-title').text().trim();
+      const url = BASE_URL + $(el).find('a').attr('href');
+      const thumb = $(el).find('img').attr('src');
+
+      if (title && url && thumb) {
+        animes.push({ title, url, thumb });
+      }
     });
 
     res.json({ resultados: animes });
   } catch (err) {
-    res.status(500).json({ erro: 'Erro ao obter populares' });
+    console.error("Erro scraping:", err.message);
+    res.status(500).json({ erro: 'Erro ao obter populares do AnimeFire.plus' });
   }
 });
 
@@ -57,7 +66,7 @@ app.get('/animefire/buscar/:termo', async (req, res) => {
 app.get('/animefire/assistir/:slug', async (req, res) => {
   try {
     const { slug } = req.params;
-    const { data } = await axios.get(`${BASE_URL/animes}/${slug}`);
+    const { data } = await axios.get(`${BASE_URL}/animes/${slug}`);
     const $ = cheerio.load(data);
 
     const iframe = $('iframe').attr('src');
