@@ -8,19 +8,17 @@ app.use(cors());
 
 const BASE_URL = 'https://animefire.plus';
 
+// 🔥 Página inicial
 app.get('/', (req, res) => {
-  res.send('🔥 API OtakuBantu AnimeFire Ativa');
+  res.send('🔥 OtakuBantu Backend usando AnimeFire.plus');
 });
 
-// 🟢 Lista de animes populares da página inicial
+// ✅ POPULARES / ANIMES ATUALIZADOS
 app.get('/animefire/populares', async (req, res) => {
   try {
     const { data } = await axios.get(`${BASE_URL}/animes-atualizados`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0', // Evita bloqueio
-      }
+      headers: { 'User-Agent': 'Mozilla/5.0' }
     });
-
     const $ = cheerio.load(data);
     const animes = [];
 
@@ -28,29 +26,29 @@ app.get('/animefire/populares', async (req, res) => {
       const title = $(el).find('.anime-card-title').text().trim();
       const url = BASE_URL + $(el).find('a').attr('href');
       const thumb = $(el).find('img').attr('src');
-
-      if (title && url && thumb) {
-        animes.push({ title, url, thumb });
-      }
+      animes.push({ title, url, thumb });
     });
 
     res.json({ resultados: animes });
   } catch (err) {
-    console.error("Erro scraping:", err.message);
-    res.status(500).json({ erro: 'Erro ao obter populares do AnimeFire.plus' });
+    console.error(err.message);
+    res.status(500).json({ erro: 'Erro ao obter populares' });
   }
 });
 
-// 🔍 Busca por nome
+// 🔍 BUSCA POR NOME
 app.get('/animefire/buscar/:termo', async (req, res) => {
   try {
-    const termo = req.params.termo.replace(/\s+/g, '+');
-    const { data } = await axios.get(`${BASE_URL}/pesquisar/${termo}`);
+    const termo = req.params.termo;
+    const { data } = await axios.get(`${BASE_URL}/pesquisar/${encodeURIComponent(termo)}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+
     const $ = cheerio.load(data);
     const resultados = [];
 
-    $('.col-lg-2 .anime__item').each((i, el) => {
-      const title = $(el).find('.anime__item__text a').text().trim();
+    $('.anime-card-container').each((i, el) => {
+      const title = $(el).find('.anime-card-title').text().trim();
       const url = BASE_URL + $(el).find('a').attr('href');
       const thumb = $(el).find('img').attr('src');
       resultados.push({ title, url, thumb });
@@ -58,34 +56,55 @@ app.get('/animefire/buscar/:termo', async (req, res) => {
 
     res.json({ resultados });
   } catch (err) {
+    console.error(err.message);
     res.status(500).json({ erro: 'Erro ao buscar anime' });
   }
 });
 
-// ▶️ Assistir episódio (pega iframe + lista de episódios)
+// ▶️ LISTAR TODOS OS EPISÓDIOS DE UM ANIME
 app.get('/animefire/assistir/:slug', async (req, res) => {
   try {
-    const { slug } = req.params;
-    const { data } = await axios.get(`${BASE_URL}/animes/${slug}`);
-    const $ = cheerio.load(data);
-
-    const iframe = $('iframe').attr('src');
-    const episodios = [];
-
-    $('.episodes__item').each((i, el) => {
-      const epTitle = $(el).text().trim();
-      const epUrl = BASE_URL + $(el).attr('href');
-      episodios.push({ epTitle, epUrl });
+    const slug = req.params.slug;
+    const { data } = await axios.get(`${BASE_URL}/animes/${slug}-todos-os-episodios`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
     });
 
-    res.json({ player: iframe, episodios });
+    const $ = cheerio.load(data);
+    const episodios = [];
+
+    $('.episodes .episodes-list a').each((i, el) => {
+      const epTitle = $(el).text().trim();
+      const epUrl = $(el).attr('href');
+      const epNum = epUrl.split('/').pop();
+      episodios.push({ epTitle, epNum });
+    });
+
+    res.json({ episodios });
   } catch (err) {
-    res.status(500).json({ erro: 'Erro ao obter episódio' });
+    console.error(err.message);
+    res.status(500).json({ erro: 'Erro ao obter episódios' });
   }
 });
 
-// Inicializa o servidor
+// ▶️ PEGAR IFRAME DO EPISÓDIO SELECIONADO
+app.get('/animefire/player/:slug/:ep', async (req, res) => {
+  try {
+    const { slug, ep } = req.params;
+    const { data } = await axios.get(`${BASE_URL}/animes/${slug}/${ep}`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+
+    const $ = cheerio.load(data);
+    const iframe = $('iframe').first().attr('src');
+
+    res.json({ player: iframe });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ erro: 'Erro ao obter player do episódio' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ OtakuBantu backend ativo na porta ${PORT}`);
+  console.log(`✅ OtakuBantu Backend rodando na porta ${PORT}`);
 });
