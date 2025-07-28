@@ -4,7 +4,9 @@ const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
 const Parser = require('rss-parser');
+const parser = new Parser();
 
+const app = express();
 app.use(cors());
 
 const PORT = process.env.PORT || 8080;
@@ -67,9 +69,6 @@ app.get('/api/recomendados', async (req, res) => {
 });
 
 // 📰 Notícias Anime (usando Google News PT RSS)
-const Parser = require('rss-parser');
-const parser = new Parser();
-
 app.get('/api/noticias', async (req, res) => {
   try {
     const feed = await parser.parseURL('https://news.google.com/rss/search?q=anime&hl=pt-PT&gl=PT&ceid=PT:pt-150');
@@ -104,5 +103,3 @@ app.get('/api/lancamentos', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`OtakuBantu API rodando na porta ${PORT}`);
 });
-
-
