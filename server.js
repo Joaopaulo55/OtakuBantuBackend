@@ -1,5 +1,4 @@
 // server.js
-
 const express = require('express');
 const cors = require('cors');
 const axios = require('axios');
@@ -8,6 +7,7 @@ const parser = new Parser();
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 const PORT = process.env.PORT || 8080;
 
@@ -40,6 +40,7 @@ app.get('/api/populares', async (req, res) => {
     })));
     res.json(lista);
   } catch (err) {
+    console.error('Erro ao buscar animes populares:', err);
     res.status(500).json({ erro: 'Erro ao buscar animes populares' });
   }
 });
@@ -64,6 +65,7 @@ app.get('/api/recomendados', async (req, res) => {
       recomendados
     });
   } catch (err) {
+    console.error('Erro nas recomendações:', err);
     res.status(500).json({ erro: 'Erro nas recomendações' });
   }
 });
@@ -79,6 +81,7 @@ app.get('/api/noticias', async (req, res) => {
     }));
     res.json(noticias);
   } catch (err) {
+    console.error('Erro ao buscar notícias:', err);
     res.status(500).json({ erro: 'Erro ao buscar notícias' });
   }
 });
@@ -95,8 +98,14 @@ app.get('/api/lancamentos', async (req, res) => {
     })));
     res.json(futuros);
   } catch (err) {
+    console.error('Erro ao buscar lançamentos:', err);
     res.status(500).json({ erro: 'Erro ao buscar lançamentos' });
   }
+});
+
+// Rota de saúde
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK' });
 });
 
 // ✅ Server rodando
